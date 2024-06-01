@@ -1,0 +1,63 @@
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM, pipeline, BertTokenizer, BertForSequenceClassification
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# Load Tokenizers and Models
+tokenizers = {
+    "general": AutoTokenizer.from_pretrained("EleutherAI/llama-7B"),
+    "sentiment": AutoTokenizer.from_pretrained("distilbert-base-uncased"),
+    "generation": AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B"),
+    "scibert": AutoTokenizer.from_pretrained("allenai/scibert_scivocab_uncased")
+}
+
+models = {
+    "general": AutoModelForCausalLM.from_pretrained("EleutherAI/llama-7B"),
+    "sentiment": AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased"),
+    "generation": AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-2.7B"),
+    "scibert": AutoModelForSequenceClassification.from_pretrained("allenai/scibert_scivocab_uncased")
+}
+
+# Create Pipelines
+pipelines = {
+    "general": pipeline("text-generation", model=models["general"], tokenizer=tokenizers["general"]),
+    "sentiment": pipeline("sentiment-analysis", model=models["sentiment"], tokenizer=tokenizers["sentiment"]),
+    "generation": pipeline("text-generation", model=models["generation"], tokenizer=tokenizers["generation"]),
+    "scibert": pipeline("text-classification", model=models["scibert"], tokenizer=tokenizers["scibert"])
+}
+
+# Load Router Model
+router_tokenizer = BertTokenizer.from_pretrained("./router_model")
+router_model = BertForSequenceClassification.from_pretrained("./router_model")
+
+# Mapping label IDs to their string representations
+label2id = {
+    "general": 0,
+    "sentiment": 1,
+    "generation": 2,
+    "scibert": 3
+}
+id2label = {v: k for k, v in label2id.items()}
+
+# Function to Predict the Expert
+def predict_expert(query):
+    inputs = router_tokenizer(query, return_tensors="pt", truncation=True, padding=True)
+    outputs = router_model(**inputs)
+    logits = outputs.logits
+    predicted_class_id = torch.argmax(logits, dim=1).item()
+    return id2label[predicted_class_id]
+
+# Request Model
+class QueryRequest(BaseModel):
+    query: str
+
+@app.post("/query")
+async def query_model(request: QueryRequest):
+    query = request.query
+    expert = predict_expert(query)
+    response = pipelines[expert](query)
+    return {"query": query, "expert": expert, "response": response}
+
+# Run the server with: uvicorn main:app --reload
