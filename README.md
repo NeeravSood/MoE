@@ -1,4 +1,4 @@
-# Mixture of Experts (MoE) System
+# Mixture of Experts (MoE)
 
 This repository contains a Mixture of Experts (MoE) system designed to handle various natural language processing (NLP) tasks by routing queries to specialized expert models. The system is built using FastAPI and integrates multiple pre-trained transformer models from Hugging Face's `transformers` library.
 
