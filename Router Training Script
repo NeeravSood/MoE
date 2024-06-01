@@ -1,0 +1,67 @@
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+from sklearn.model_selection import train_test_split
+import pandas as pd
+
+# Example Training Data
+data = {
+    "text": [
+        "What is the capital of France?",
+        "Analyze the sentiment of this text.",
+        "Generate a story about a robot.",
+        "Classify this scientific abstract."
+    ],
+    "label": ["general", "bert", "gpt", "scibert"]
+}
+
+df = pd.DataFrame(data)
+
+# Tokenization and Encoding
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+train_texts, val_texts, train_labels, val_labels = train_test_split(df["text"].tolist(), df["label"].tolist(), test_size=0.2)
+
+train_encodings = tokenizer(train_texts, truncation=True, padding=True)
+val_encodings = tokenizer(val_texts, truncation=True, padding=True)
+
+# Converting labels to integers
+label2id = {label: i for i, label in enumerate(df["label"].unique())}
+train_labels = [label2id[label] for label in train_labels]
+val_labels = [label2id[label] for label in val_labels]
+
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item["labels"] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+train_dataset = Dataset(train_encodings, train_labels)
+val_dataset = Dataset(val_encodings, val_labels)
+
+# Model Training
+model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=len(label2id))
+
+training_args = TrainingArguments(
+    output_dir="./results",
+    evaluation_strategy="epoch",
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+)
+
+trainer.train()
+trainer.save_model("./router_model")
